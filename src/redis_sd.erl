@@ -3,8 +3,9 @@
 %%%-------------------------------------------------------------------
 %%% @author Andrew Bennett <andrew@pagodabox.com>
 %%% @copyright 2013, Pagoda Box, Inc.
-%%% @doc urldecode/1,2 and urlencode/1,2 are from cowboy_http
+%%% @doc urldecode/1,2 and urlencode/1,2 are from cowboy_http, require/1 is from ranch
 %%% https://github.com/extend/cowboy/blob/0.8.6/src/cowboy_http.erl
+%%% https://github.com/extend/ranch/blob/0.8.5/src/ranch.erl
 %%%
 %%% @end
 %%% Created :  30 Aug 2013 by Andrew Bennett <andrew@pagodabox.com>
@@ -13,6 +14,7 @@
 
 %% API
 -export([any_to_string/1, nsjoin/1, nsreverse/1, nssplit/1]).
+-export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
 %%%===================================================================
@@ -49,6 +51,17 @@ nssplit(List) when is_list(List) ->
 	nssplit(iolist_to_binary(List));
 nssplit(Binary) when is_binary(Binary) ->
 	name_service_split(Binary, <<>>, []).
+
+%% @doc Start the given applications if they were not already started.
+-spec require(list(module())) -> ok.
+require([]) ->
+	ok;
+require([App|Tail]) ->
+	case application:start(App) of
+		ok -> ok;
+		{error, {already_started, App}} -> ok
+	end,
+	require(Tail).
 
 %% @doc Decode a URL encoded binary.
 %% @equiv urldecode(Bin, crash)
