@@ -13,7 +13,7 @@
 -module(redis_sd).
 
 %% API
--export([any_to_string/1, nsjoin/1, nsreverse/1, nssplit/1]).
+-export([any_to_string/1, is_label/1, nsjoin/1, nsreverse/1, nssplit/1]).
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
@@ -31,6 +31,20 @@ any_to_string(A) when is_atom(A) ->
 	atom_to_list(A);
 any_to_string(L) when is_list(L) ->
 	any_to_string(iolist_to_binary(L)).
+
+%% @doc Validates whether Label is a valid hostname label string().
+%% Must contain: lowercase a-z, 0-9, and hyphen (-).
+%% Must NOT start or end with hyphen (-).
+%% Must be at least 1 byte in length.
+%% Must NOT be longer than 63 bytes.
+%% [http://tools.ietf.org/html/rfc952]
+%% [http://tools.ietf.org/html/rfc1123]
+is_label([$- | _]) ->
+	false;
+is_label(Label=[_ | _]) when length(Label) =< 63 ->
+	check_label(Label);
+is_label(_) ->
+	false.
 
 %% @doc Join and urlencode a DNS with dots (.)
 -spec nsjoin([iodata()]) -> binary().
@@ -111,6 +125,20 @@ urlencode(Bin, Opts) when is_binary(Bin) ->
 %%%-------------------------------------------------------------------
 %%% Internal functions
 %%%-------------------------------------------------------------------
+
+%% @private
+check_label([]) ->
+	true;
+check_label([$-]) ->
+	false;
+check_label([$- | Label]) ->
+	check_label(Label);
+check_label([C | Label])
+		when (C >= $a andalso C =< $z)
+		orelse (C >= $0 andalso C =< $9) ->
+	check_label(Label);
+check_label(_) ->
+	false.
 
 %% @private
 name_service_join([], [], Tokens) ->
