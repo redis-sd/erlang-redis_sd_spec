@@ -12,14 +12,38 @@
 %%%-------------------------------------------------------------------
 -module(redis_sd).
 
+-include("redis_sd.hrl").
+
 %% API
--export([any_to_string/1, is_label/1, nsjoin/1, nsreverse/1, nssplit/1]).
+-export([new/9, any_to_string/1, is_label/1, nsjoin/1, nsreverse/1, nssplit/1]).
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
 %%%===================================================================
 %%% API functions
 %%%===================================================================
+
+new(TTL, Domain, Type, Service, Hostname, Instance, Target, Port, TXTData)
+		when is_integer(TTL)
+		andalso is_binary(Domain)
+		andalso is_binary(Type)
+		andalso is_binary(Service)
+		andalso is_binary(Hostname)
+		andalso is_binary(Instance)
+		andalso is_binary(Target)
+		andalso is_integer(Port)
+		andalso is_list(TXTData) ->
+	#redis_sd{
+		ttl = TTL,
+		domain = Domain,
+		type = Type,
+		service = Service,
+		hostname = Hostname,
+		instance = Instance,
+		target = Target,
+		port = Port,
+		txtdata = TXTData
+	}.
 
 %% @doc Converts anything to a string.
 -spec any_to_string(integer() | binary() | atom() | iodata()) -> string().
