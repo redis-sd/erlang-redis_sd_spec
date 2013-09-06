@@ -15,35 +15,20 @@
 -include("redis_sd.hrl").
 
 %% API
--export([new/9, any_to_string/1, is_label/1, nsjoin/1, nsreverse/1, nssplit/1]).
+-export([any_to_string/1]).
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
+
+%% Object API
+-export([new/8, obj_key/1, obj_val/1]).
+
+%% Types
+-type obj() :: #redis_sd{}.
+-export_type([obj/0]).
 
 %%%===================================================================
 %%% API functions
 %%%===================================================================
-
-new(TTL, Domain, Type, Service, Hostname, Instance, Target, Port, TXTData)
-		when is_integer(TTL)
-		andalso is_binary(Domain)
-		andalso is_binary(Type)
-		andalso is_binary(Service)
-		andalso is_binary(Hostname)
-		andalso is_binary(Instance)
-		andalso is_binary(Target)
-		andalso is_integer(Port)
-		andalso is_list(TXTData) ->
-	#redis_sd{
-		ttl = TTL,
-		domain = Domain,
-		type = Type,
-		service = Service,
-		hostname = Hostname,
-		instance = Instance,
-		target = Target,
-		port = Port,
-		txtdata = TXTData
-	}.
 
 %% @doc Converts anything to a string.
 -spec any_to_string(integer() | binary() | atom() | iodata()) -> string().
@@ -55,40 +40,6 @@ any_to_string(A) when is_atom(A) ->
 	atom_to_list(A);
 any_to_string(L) when is_list(L) ->
 	any_to_string(iolist_to_binary(L)).
-
-%% @doc Validates whether Label is a valid hostname label string().
-%% Must contain: lowercase a-z, 0-9, and hyphen (-).
-%% Must NOT start or end with hyphen (-).
-%% Must be at least 1 byte in length.
-%% Must NOT be longer than 63 bytes.
-%% [http://tools.ietf.org/html/rfc952]
-%% [http://tools.ietf.org/html/rfc1123]
-is_label([$- | _]) ->
-	false;
-is_label(Label=[_ | _]) when length(Label) =< 63 ->
-	check_label(Label);
-is_label(_) ->
-	false.
-
-%% @doc Join and urlencode a DNS with dots (.)
--spec nsjoin([iodata()]) -> binary().
-nsjoin(Names) when is_list(Names) ->
-	name_service_join(Names, [], []).
-
-%% @doc Reverse the parts of a DNS.
-%% For example: <<"a.b.c">> becomes <<"c.b.a">>
--spec nsreverse(binary() | iolist()) -> binary().
-nsreverse(List) when is_list(List) ->
-	nsreverse(iolist_to_binary(List));
-nsreverse(Binary) when is_binary(Binary) ->
-	name_service_reverse(Binary, <<>>, []).
-
-%% @doc Split and urldecode a DNS by dots (.)
--spec nssplit(binary() | iolist()) -> [binary()].
-nssplit(List) when is_list(List) ->
-	nssplit(iolist_to_binary(List));
-nssplit(Binary) when is_binary(Binary) ->
-	name_service_split(Binary, <<>>, []).
 
 %% @doc Start the given applications if they were not already started.
 -spec require(list(module())) -> ok.
@@ -146,51 +97,48 @@ urlencode(Bin, Opts) when is_binary(Bin) ->
 	Upper = lists:member(upper, Opts),
 	urlencode(Bin, <<>>, Plus, Upper).
 
+%%%===================================================================
+%%% Object API functions
+%%%===================================================================
+
+%% @doc Creates a new #redis_sd{} object.
+-spec new(integer(), binary(), binary(), binary(), binary(), binary(), integer(), [{binary(), binary()}])
+	-> redis_sd:obj().
+new(TTL, Domain, Type, Service, Instance, Target, Port, TXTData)
+		when is_integer(TTL)
+		andalso is_binary(Domain)
+		andalso is_binary(Type)
+		andalso is_binary(Service)
+		andalso is_binary(Instance)
+		andalso is_binary(Target)
+		andalso is_integer(Port)
+		andalso is_list(TXTData) ->
+	#redis_sd{
+		ttl = TTL,
+		domain = Domain,
+		type = Type,
+		service = Service,
+		instance = Instance,
+		target = Target,
+		port = Port,
+		txtdata = TXTData
+	}.
+
+%% @doc Return the unqiue key for the #redis_sd{} object.
+-spec obj_key(redis_sd:obj())
+	-> {binary(), binary(), binary(), binary()}.
+obj_key(#redis_sd{domain=D, type=T, service=S, instance=I}) ->
+	{D, T, S, I}.
+
+%% @doc Return the value for the #redis_sd{} object.
+-spec obj_val(redis_sd:obj())
+	-> {integer(), binary(), integer(), [{binary(), binary()}]}.
+obj_val(#redis_sd{ttl=TTL, target=Target, port=Port, txtdata=TXTData}) ->
+	{TTL, Target, Port, TXTData}.
+
 %%%-------------------------------------------------------------------
 %%% Internal functions
 %%%-------------------------------------------------------------------
-
-%% @private
-check_label([]) ->
-	true;
-check_label([$-]) ->
-	false;
-check_label([$- | Label]) ->
-	check_label(Label);
-check_label([C | Label])
-		when (C >= $a andalso C =< $z)
-		orelse (C >= $0 andalso C =< $9) ->
-	check_label(Label);
-check_label(_) ->
-	false.
-
-%% @private
-name_service_join([], [], Tokens) ->
-	iolist_to_binary(Tokens);
-name_service_join([], [Token | Encoded], []) ->
-	name_service_join([], Encoded, [Token]);
-name_service_join([], [Token | Encoded], Tokens) ->
-	name_service_join([], Encoded, [Token, $. | Tokens]);
-name_service_join([[$_ | Name] | Names], Encoded, Tokens) ->
-	name_service_join(Names, [[$_, urlencode(Name)] | Encoded], Tokens);
-name_service_join([Name | Names], Encoded, Tokens) ->
-	name_service_join(Names, [urlencode(Name) | Encoded], Tokens).
-
-%% @private
-name_service_reverse(<<>>, Token, Names) ->
-	iolist_to_binary([Token | Names]);
-name_service_reverse(<< $., Rest/binary >>, Token, Names) ->
-	name_service_reverse(Rest, <<>>, [$., Token | Names]);
-name_service_reverse(<< C, Rest/binary >>, Token, Names) ->
-	name_service_reverse(Rest, << Token/binary, C >>, Names).
-
-%% @private
-name_service_split(<<>>, Token, Names) ->
-	lists:reverse([Token | Names]);
-name_service_split(<< $., Rest/binary >>, Token, Names) ->
-	name_service_split(Rest, <<>>, [urldecode(Token) | Names]);
-name_service_split(<< C, Rest/binary >>, Token, Names) ->
-	name_service_split(Rest, << Token/binary, C >>, Names).
 
 -spec urldecode(binary(), binary(), crash | skip) -> binary().
 %% @private

@@ -14,7 +14,6 @@
 	domain   = undefined :: undefined | binary(),
 	type     = undefined :: undefined | binary(),
 	service  = undefined :: undefined | binary(),
-	hostname = undefined :: undefined | binary(),
 	instance = undefined :: undefined | binary(),
 	target   = undefined :: undefined | binary(),
 	port     = undefined :: undefined | non_neg_integer(),
