@@ -1,3 +1,4 @@
+%% -*- coding: utf-8 -*-
 %% -*- mode: erlang; tab-width: 4; indent-tabs-mode: 1; st-rulers: [70] -*-
 %% vim: ts=4 sw=4 ft=erlang noet
 %%%-------------------------------------------------------------------
@@ -14,8 +15,12 @@
 
 -include("redis_sd.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% API
--export([any_to_string/1]).
+-export([any_to_string/1, labels_to_keys/1, keys_to_labels/1]).
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
@@ -40,6 +45,43 @@ any_to_string(A) when is_atom(A) ->
 	atom_to_list(A);
 any_to_string(L) when is_list(L) ->
 	any_to_string(iolist_to_binary(L)).
+
+-spec labels_to_keys({binary(), binary(), binary(), binary()})
+	-> [{ptr, binary()} | {srv, binary()} | {key, binary()}].
+labels_to_keys({Domain, Type, Service, Instance})
+		when is_binary(Domain)
+		andalso is_binary(Type)
+		andalso is_binary(Service)
+		andalso is_binary(Instance) ->
+	Encoded = urlencode(Instance),
+	PTR = redis_sd_ns:join([Service, Type, Domain]),
+	SRV = << Encoded/binary, $., PTR/binary >>,
+	KEY = << (redis_sd_ns:reverse(PTR))/binary, $., Encoded/binary >>,
+	[
+		{ptr, PTR},
+		{srv, SRV},
+		{key, KEY}
+	].
+
+-spec keys_to_labels([{ptr, binary()} | {srv, binary()} | {key, binary()}])
+	-> {binary(), binary(), binary(), binary()}.
+keys_to_labels(Keys) when is_list(Keys) ->
+	PTR = proplists:get_value(ptr, Keys),
+	SRV = proplists:get_value(srv, Keys),
+	case {PTR, SRV} of
+		_ when is_binary(PTR)
+				andalso is_binary(SRV)
+				andalso byte_size(PTR) > 0
+				andalso byte_size(PTR) < byte_size(SRV)
+				andalso << $., PTR/binary >> =:= binary_part(SRV, byte_size(SRV) - byte_size(PTR) - 1, byte_size(PTR) + 1) ->
+			Encoded = binary:part(SRV, 0, byte_size(SRV) - byte_size(PTR) - 1),
+			Instance = urldecode(Encoded),
+			[Service, Type | DomainLabels] = redis_sd_ns:split(PTR),
+			Domain = redis_sd_ns:join(DomainLabels),
+			{Domain, Type, Service, Instance};
+		_ ->
+			erlang:error(badarg, [Keys])
+	end.
 
 %% @doc Start the given applications if they were not already started.
 -spec require(list(module())) -> ok.
@@ -197,3 +239,51 @@ tohexu(C) when C < 17 -> $A + C - 10.
 tohexl(C) when C < 10 -> $0 + C;
 tohexl(C) when C < 17 -> $a + C - 10.
 
+-ifdef(TEST).
+
+labels_keys_roundtrip_test_() ->
+	Specs = [
+		{
+			{<<"domain">>, <<"_type">>, <<"_service">>, <<"instance">>},
+			[
+				{ptr, <<"_service._type.domain">>},
+				{srv, <<"instance._service._type.domain">>},
+				{key, <<"domain._type._service.instance">>}
+			]
+		},
+		{
+			{<<"deeply.nested.domain.at.a.company.com">>, <<"_tcp">>, <<"_erlang">>, <<
+				206,190,206,181,207,131,206,186,206,181,207,128,206,172,206,
+				182,207,137,32,207,132,225,189,180,206,189,32,207,136,207,
+				133,207,135,206,191,207,134,206,184,207,140,207,129,206,
+				177,32,206,178,206,180,206,181,206,187,207,133,206,179,
+				206,188,206,175,206,177
+			>>}, %% <<"ξεσκεπάζω τὴν ψυχοφθόρα βδελυγμία"/utf8>>
+			[
+				{ptr, <<"_erlang._tcp.deeply.nested.domain.at.a.company.com">>},
+				{srv, <<
+					"%ce%be%ce%b5%cf%83%ce%ba%ce%b5%cf%80%ce%ac%ce%b6%cf"
+					"%89+%cf%84%e1%bd%b4%ce%bd+%cf%88%cf%85%cf%87%ce%bf"
+					"%cf%86%ce%b8%cf%8c%cf%81%ce%b1+%ce%b2%ce%b4%ce%b5"
+					"%ce%bb%cf%85%ce%b3%ce%bc%ce%af%ce%b1"
+					"._erlang._tcp.deeply.nested.domain.at.a.company.com"
+				>>},
+				{key, <<
+					"com.company.a.at.domain.nested.deeply._tcp._erlang."
+					"%ce%be%ce%b5%cf%83%ce%ba%ce%b5%cf%80%ce%ac%ce%b6%cf"
+					"%89+%cf%84%e1%bd%b4%ce%bd+%cf%88%cf%85%cf%87%ce%bf"
+					"%cf%86%ce%b8%cf%8c%cf%81%ce%b1+%ce%b2%ce%b4%ce%b5"
+					"%ce%bb%cf%85%ce%b3%ce%bc%ce%af%ce%b1"
+				>>}
+			]
+		}
+	],
+	[{lists:flatten(io_lib:format("roundtrip: ~p <=> ~p", [Labels, Keys])), fun() ->
+		[{ptr, PTR2}, {srv, SRV2}, {key, KEY2}] = labels_to_keys(Labels),
+		?assertEqual(PTR, PTR2),
+		?assertEqual(SRV, SRV2),
+		?assertEqual(KEY, KEY2),
+		?assertEqual(Labels, keys_to_labels(Keys))
+	end} || {Labels, Keys=[{ptr, PTR}, {srv, SRV}, {key, KEY}]} <- Specs].
+
+-endif.

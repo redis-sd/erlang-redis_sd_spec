@@ -13,9 +13,7 @@
 -include("redis_sd.hrl").
 
 %% API
--export([is_label/1, extract/1, join/1, reverse/1, split/1]).
-
--type dir() :: ltr | rtl.
+-export([is_label/1, join/1, reverse/1, split/1]).
 
 %%%===================================================================
 %%% API functions
@@ -36,66 +34,25 @@ is_label(Label=[_ | _]) when length(Label) =< 63 ->
 is_label(_) ->
 	false.
 
-%% @doc Extract the instance from a full service name.
--spec extract(binary() | iolist()) -> {dir(), binary(), binary()}.
-extract(List) when is_list(List) ->
-	extract(iolist_to_binary(List));
-extract(B = << $$, Binary/binary >>) ->
-	case binary:split(Binary, << $^ >>, [trim]) of
-		[DomainName, Instance] ->
-			{rtl, Instance, DomainName};
-		_ ->
-			erlang:error(badarg, [B])
-	end;
-extract(Binary) when is_binary(Binary) ->
-	case binary:last(Binary) of
-		$$ ->
-			case binary:split(Binary, << $^ >>, [trim]) of
-				[Instance, DomainName] ->
-					{ltr, Instance, binary:part(DomainName, 0, byte_size(DomainName) - 1)};
-				_ ->
-					erlang:error(badarg, [Binary])
-			end;
-		_ ->
-			erlang:error(badarg, [Binary])
-	end.
-
-%% @doc Join and urlencode a DNS with dots (.)
--spec join({dir(), iodata(), iodata() | [iodata()]}) -> binary().
-join({rtl, Instance, Labels}) ->
-	DomainName = ns_join(Labels, [], []),
-	Encoded = redis_sd:urlencode(Instance),
-	<< $$, DomainName/binary, $^, Encoded/binary >>;
-join({ltr, Instance, Labels}) ->
-	DomainName = ns_join(Labels, [], []),
-	Encoded = redis_sd:urlencode(Instance),
-	<< Encoded/binary, $^, DomainName/binary, $$ >>.
+%% @doc Join Labels with dots (.)
+-spec join(binary() | [iodata()]) -> binary().
+join(Labels) ->
+	ns_join(Labels, [], []).
 
 %% @doc Reverse the parts of a DNS.
-%% For example: <<"instance^_service._type.domain$">> becomes <<"$domain._type._service^instance">>
--spec reverse(binary() | iolist()) -> binary().
+%% For example: <<"_service._type.domain">> becomes <<"domain._type._service">>
+-spec reverse(iodata()) -> binary().
 reverse(L) when is_list(L) ->
 	reverse(iolist_to_binary(L));
 reverse(B) when is_binary(B) ->
-	reverse(extract(B));
-reverse({Direction0, Instance, DomainName}) ->
-	Direction = case Direction0 of
-		ltr ->
-			rtl;
-		rtl ->
-			ltr
-	end,
-	Reversed = ns_reverse(DomainName, <<>>, []),
-	join({Direction, redis_sd:urldecode(Instance, skip), Reversed}).
+	ns_reverse(B, <<>>, []).
 
-%% @doc Split and urldecode a DNS by dots (.)
--spec split(binary() | iolist()) -> {dir(), binary(), [binary()]}.
+%% @doc Split a DNS by dots (.)
+-spec split(iodata()) -> binary().
 split(L) when is_list(L) ->
 	split(iolist_to_binary(L));
 split(B) when is_binary(B) ->
-	split(extract(B));
-split({Direction, Instance, DomainName}) ->
-	{Direction, redis_sd:urldecode(Instance, skip), ns_split(DomainName, <<>>, [])}.
+	ns_split(B, <<>>, []).
 
 %%%-------------------------------------------------------------------
 %%% Internal functions
@@ -109,8 +66,8 @@ check_label([$-]) ->
 check_label([$- | Label]) ->
 	check_label(Label);
 check_label([C | Label])
-		when (C >= $a andalso C =< $z)
-		orelse (C >= $0 andalso C =< $9) ->
+		when is_integer(C) andalso
+		((C >= $a andalso C =< $z) orelse (C >= $0 andalso C =< $9)) ->
 	check_label(Label);
 check_label(_) ->
 	false.
@@ -124,14 +81,10 @@ ns_join([], [Token | Encoded], []) ->
 	ns_join([], Encoded, [Token]);
 ns_join([], [Token | Encoded], Tokens) ->
 	ns_join([], Encoded, [Token, $. | Tokens]);
-ns_join([[$_ | Name] | Names], Encoded, Tokens) ->
-	ns_join(Names, [[$_, redis_sd:urlencode(Name)] | Encoded], Tokens);
 ns_join([Name | Names], Encoded, Tokens) ->
-	ns_join(Names, [redis_sd:urlencode(Name) | Encoded], Tokens).
+	ns_join(Names, [Name | Encoded], Tokens).
 
 %% @private
-ns_reverse(L, _Token, []) when is_list(L) ->
-	ns_join(lists:reverse(L), [], []);
 ns_reverse(<<>>, Token, Names) ->
 	iolist_to_binary([Token | Names]);
 ns_reverse(<< $., Rest/binary >>, Token, Names) ->
@@ -146,3 +99,34 @@ ns_split(<< $., Rest/binary >>, Token, Names) ->
 	ns_split(Rest, <<>>, [Token | Names]);
 ns_split(<< C, Rest/binary >>, Token, Names) ->
 	ns_split(Rest, << Token/binary, C >>, Names).
+
+%%%-------------------------------------------------------------------
+%%% Test functions
+%%%-------------------------------------------------------------------
+
+-ifdef(TEST).
+
+is_label_test_() ->
+	Specs = [
+		{"domain", true},
+		{"0123456789", true},
+		{"0", true},
+		{"abcdefghijklmnopqrstuvwxyz0123456789", true},
+		{"xn--bcher-kva", true},
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true}, % max 63 chars
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
+		{"-hyphen", false},
+		{"hyphen-", false},
+		{"-hyphen-", false},
+		{"dot.domain", false},
+		{"doMain", false},
+		{"dΩmain", false},
+		{domain, false},
+		{<<"domain">>, false},
+		{[$a, bad], false}
+	],
+	[{lists:flatten(io_lib:format("label: ~p", [Label])), fun() ->
+		Result = is_label(Label)
+	end} || {Label, Result} <- Specs].
+
+-endif.
