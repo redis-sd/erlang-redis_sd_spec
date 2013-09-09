@@ -9,13 +9,20 @@
 %%% Created :  06 Sep 2013 by Andrew Bennett <andrew@pagodabox.com>
 %%%-------------------------------------------------------------------
 
--record(redis_sd, {
-	ttl      = undefined :: undefined | non_neg_integer(),
+-record(dns_sd, {
+	%% Domain
 	domain   = undefined :: undefined | binary(),
 	type     = undefined :: undefined | binary(),
 	service  = undefined :: undefined | binary(),
 	instance = undefined :: undefined | binary(),
-	target   = undefined :: undefined | binary(),
+	ttl      = undefined :: undefined | non_neg_integer(),
+
+	%% SRV
+	priority = undefined :: undefined | non_neg_integer(),
+	weight   = undefined :: undefined | non_neg_integer(),
 	port     = undefined :: undefined | non_neg_integer(),
+	target   = undefined :: undefined | binary(),
+
+	%% TXT
 	txtdata  = undefined :: undefined | [{binary(), binary()}]
 }).

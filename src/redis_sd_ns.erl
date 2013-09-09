@@ -26,7 +26,9 @@
 %% Must NOT be longer than 63 bytes.
 %% [http://tools.ietf.org/html/rfc952]
 %% [http://tools.ietf.org/html/rfc1123]
--spec is_label(string()) -> boolean().
+-spec is_label(string() | binary()) -> boolean().
+is_label(Binary) when is_binary(Binary) ->
+	is_label(binary_to_list(Binary));
 is_label([$- | _]) ->
 	false;
 is_label(Label=[_ | _]) when length(Label) =< 63 ->
@@ -109,6 +111,7 @@ ns_split(<< C, Rest/binary >>, Token, Names) ->
 is_label_test_() ->
 	Specs = [
 		{"domain", true},
+		{<<"domain">>, true},
 		{"0123456789", true},
 		{"0", true},
 		{"abcdefghijklmnopqrstuvwxyz0123456789", true},
@@ -122,7 +125,6 @@ is_label_test_() ->
 		{"doMain", false},
 		{"dΩmain", false},
 		{domain, false},
-		{<<"domain">>, false},
 		{[$a, bad], false}
 	],
 	[{lists:flatten(io_lib:format("label: ~p", [Label])), fun() ->

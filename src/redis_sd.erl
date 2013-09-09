@@ -20,7 +20,7 @@
 -endif.
 
 %% API
--export([any_to_string/1, labels_to_keys/1, keys_to_labels/1]).
+-export([any_to_binary/1, any_to_string/1, labels_to_keys/1, keys_to_labels/1]).
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
@@ -28,14 +28,19 @@
 -export([new/8, obj_key/1, obj_val/1]).
 
 %% Types
--type obj() :: #redis_sd{}.
+-type obj() :: #dns_sd{}.
 -export_type([obj/0]).
 
 %%%===================================================================
 %%% API functions
 %%%===================================================================
 
-%% @doc Converts anything to a string.
+%% @doc Converts many common terms to a binary.
+-spec any_to_binary(integer() | binary() | atom() | iodata()) -> binary().
+any_to_binary(T) ->
+	iolist_to_binary(any_to_string(T)).
+
+%% @doc Converts many common terms to a string.
 -spec any_to_string(integer() | binary() | atom() | iodata()) -> string().
 any_to_string(I) when is_integer(I) ->
 	integer_to_list(I);
@@ -46,6 +51,7 @@ any_to_string(A) when is_atom(A) ->
 any_to_string(L) when is_list(L) ->
 	any_to_string(iolist_to_binary(L)).
 
+%% @doc Converts {Domain, Type, Service, Instance} into PTR, SRV, and KEY.
 -spec labels_to_keys({binary(), binary(), binary(), binary()})
 	-> [{ptr, binary()} | {srv, binary()} | {key, binary()}].
 labels_to_keys({Domain, Type, Service, Instance})
@@ -53,16 +59,22 @@ labels_to_keys({Domain, Type, Service, Instance})
 		andalso is_binary(Type)
 		andalso is_binary(Service)
 		andalso is_binary(Instance) ->
-	Encoded = urlencode(Instance),
-	PTR = redis_sd_ns:join([Service, Type, Domain]),
-	SRV = << Encoded/binary, $., PTR/binary >>,
-	KEY = << (redis_sd_ns:reverse(PTR))/binary, $., Encoded/binary >>,
-	[
-		{ptr, PTR},
-		{srv, SRV},
-		{key, KEY}
-	].
+	case lists:all(fun(B) -> redis_sd_ns:is_label(B) end, redis_sd_ns:split(Domain) ++ [Type, Service]) of
+		true ->
+			Encoded = urlencode(Instance),
+			PTR = redis_sd_ns:join([<< $_, Service/binary >>, << $_, Type/binary >>, Domain]),
+			SRV = << Encoded/binary, $., PTR/binary >>,
+			KEY = << (redis_sd_ns:reverse(PTR))/binary, $., Encoded/binary >>,
+			[
+				{ptr, PTR},
+				{srv, SRV},
+				{key, KEY}
+			];
+		false ->
+			erlang:error(badarg, [{Domain, Type, Service, Instance}])
+	end.
 
+%% @doc Converts PTR, SRV, and KEY into {Domain, Type, Service, Instance}.
 -spec keys_to_labels([{ptr, binary()} | {srv, binary()} | {key, binary()}])
 	-> {binary(), binary(), binary(), binary()}.
 keys_to_labels(Keys) when is_list(Keys) ->
@@ -76,9 +88,13 @@ keys_to_labels(Keys) when is_list(Keys) ->
 				andalso << $., PTR/binary >> =:= binary_part(SRV, byte_size(SRV) - byte_size(PTR) - 1, byte_size(PTR) + 1) ->
 			Encoded = binary:part(SRV, 0, byte_size(SRV) - byte_size(PTR) - 1),
 			Instance = urldecode(Encoded),
-			[Service, Type | DomainLabels] = redis_sd_ns:split(PTR),
-			Domain = redis_sd_ns:join(DomainLabels),
-			{Domain, Type, Service, Instance};
+			case redis_sd_ns:split(PTR) of
+				[<< $_, Service/binary >>, << $_, Type/binary >> | DomainLabels] ->
+					Domain = redis_sd_ns:join(DomainLabels),
+					{Domain, Type, Service, Instance};
+				_ ->
+					erlang:error(badarg, [Keys])
+			end;
 		_ ->
 			erlang:error(badarg, [Keys])
 	end.
@@ -143,7 +159,7 @@ urlencode(Bin, Opts) when is_binary(Bin) ->
 %%% Object API functions
 %%%===================================================================
 
-%% @doc Creates a new #redis_sd{} object.
+%% @doc Creates a new #dns_sd{} object.
 -spec new(integer(), binary(), binary(), binary(), binary(), binary(), integer(), [{binary(), binary()}])
 	-> redis_sd:obj().
 new(TTL, Domain, Type, Service, Instance, Target, Port, TXTData)
@@ -155,7 +171,7 @@ new(TTL, Domain, Type, Service, Instance, Target, Port, TXTData)
 		andalso is_binary(Target)
 		andalso is_integer(Port)
 		andalso is_list(TXTData) ->
-	#redis_sd{
+	#dns_sd{
 		ttl = TTL,
 		domain = Domain,
 		type = Type,
@@ -166,17 +182,17 @@ new(TTL, Domain, Type, Service, Instance, Target, Port, TXTData)
 		txtdata = TXTData
 	}.
 
-%% @doc Return the unqiue key for the #redis_sd{} object.
+%% @doc Return the unqiue key for the #dns_sd{} object.
 -spec obj_key(redis_sd:obj())
 	-> {binary(), binary(), binary(), binary()}.
-obj_key(#redis_sd{domain=D, type=T, service=S, instance=I}) ->
+obj_key(#dns_sd{domain=D, type=T, service=S, instance=I}) ->
 	{D, T, S, I}.
 
-%% @doc Return the value for the #redis_sd{} object.
+%% @doc Return the value for the #dns_sd{} object.
 -spec obj_val(redis_sd:obj())
-	-> {integer(), binary(), integer(), [{binary(), binary()}]}.
-obj_val(#redis_sd{ttl=TTL, target=Target, port=Port, txtdata=TXTData}) ->
-	{TTL, Target, Port, TXTData}.
+	-> {integer(), integer(), integer(), integer(), binary(), [{binary(), binary()}]}.
+obj_val(#dns_sd{ttl=TTL, priority=Priority, weight=Weight, port=Port, target=Target, txtdata=TXTData}) ->
+	{TTL, Priority, Weight, Port, Target, TXTData}.
 
 %%%-------------------------------------------------------------------
 %%% Internal functions
@@ -244,7 +260,7 @@ tohexl(C) when C < 17 -> $a + C - 10.
 labels_keys_roundtrip_test_() ->
 	Specs = [
 		{
-			{<<"domain">>, <<"_type">>, <<"_service">>, <<"instance">>},
+			{<<"domain">>, <<"type">>, <<"service">>, <<"instance">>},
 			[
 				{ptr, <<"_service._type.domain">>},
 				{srv, <<"instance._service._type.domain">>},
@@ -252,7 +268,7 @@ labels_keys_roundtrip_test_() ->
 			]
 		},
 		{
-			{<<"deeply.nested.domain.at.a.company.com">>, <<"_tcp">>, <<"_erlang">>, <<
+			{<<"deeply.nested.domain.at.a.company.com">>, <<"tcp">>, <<"erlang">>, <<
 				206,190,206,181,207,131,206,186,206,181,207,128,206,172,206,
 				182,207,137,32,207,132,225,189,180,206,189,32,207,136,207,
 				133,207,135,206,191,207,134,206,184,207,140,207,129,206,
