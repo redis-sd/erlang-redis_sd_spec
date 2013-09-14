@@ -9,6 +9,8 @@
 %%% Created :  06 Sep 2013 by Andrew Bennett <andrew@pagodabox.com>
 %%%-------------------------------------------------------------------
 
+-ifndef(REDIS_SD_HRL).
+
 -record(dns_sd, {
 	%% Domain
 	domain   = undefined :: undefined | binary(),
@@ -26,3 +28,7 @@
 	%% TXT
 	txtdata  = undefined :: undefined | [{binary(), binary()}]
 }).
+
+-define(REDIS_SD_HRL, 1).
+
+-endif.
