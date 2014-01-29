@@ -3,7 +3,7 @@
 
 {application, redis_sd_spec, [
 	{description, "Redis Service Discovery types, specs, and utilities."},
-	{vsn, "0.0.0"},
+	{vsn, "0.1.0"},
 	{modules, []},
 	{registered, []},
 	{applications, [

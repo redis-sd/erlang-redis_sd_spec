@@ -24,13 +24,6 @@
 -export([require/1]). % from ranch
 -export([urldecode/1, urldecode/2, urlencode/1, urlencode/2]). % from cowboy_http
 
-%% Object API
--export([new/8, obj_key/1, obj_val/1]).
-
-%% Types
--type obj() :: #dns_sd{}.
--export_type([obj/0]).
-
 %%%===================================================================
 %%% API functions
 %%%===================================================================
@@ -154,45 +147,6 @@ urlencode(Bin, Opts) when is_binary(Bin) ->
 	Plus = not lists:member(noplus, Opts),
 	Upper = lists:member(upper, Opts),
 	urlencode(Bin, <<>>, Plus, Upper).
-
-%%%===================================================================
-%%% Object API functions
-%%%===================================================================
-
-%% @doc Creates a new #dns_sd{} object.
--spec new(integer(), binary(), binary(), binary(), binary(), binary(), integer(), [{binary(), binary()}])
-	-> redis_sd:obj().
-new(TTL, Domain, Type, Service, Instance, Target, Port, TXTData)
-		when is_integer(TTL)
-		andalso is_binary(Domain)
-		andalso is_binary(Type)
-		andalso is_binary(Service)
-		andalso is_binary(Instance)
-		andalso is_binary(Target)
-		andalso is_integer(Port)
-		andalso is_list(TXTData) ->
-	#dns_sd{
-		ttl = TTL,
-		domain = Domain,
-		type = Type,
-		service = Service,
-		instance = Instance,
-		target = Target,
-		port = Port,
-		txtdata = TXTData
-	}.
-
-%% @doc Return the unqiue key for the #dns_sd{} object.
--spec obj_key(redis_sd:obj())
-	-> {binary(), binary(), binary(), binary()}.
-obj_key(#dns_sd{domain=D, type=T, service=S, instance=I}) ->
-	{D, T, S, I}.
-
-%% @doc Return the value for the #dns_sd{} object.
--spec obj_val(redis_sd:obj())
-	-> {integer(), integer(), integer(), integer(), binary(), [{binary(), binary()}]}.
-obj_val(#dns_sd{ttl=TTL, priority=Priority, weight=Weight, port=Port, target=Target, txtdata=TXTData}) ->
-	{TTL, Priority, Weight, Port, Target, TXTData}.
 
 %%%-------------------------------------------------------------------
 %%% Internal functions

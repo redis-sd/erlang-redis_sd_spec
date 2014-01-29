@@ -11,23 +11,7 @@
 
 -ifndef(REDIS_SD_HRL).
 
--record(dns_sd, {
-	%% Domain
-	domain   = undefined :: undefined | binary(),
-	type     = undefined :: undefined | binary(),
-	service  = undefined :: undefined | binary(),
-	instance = undefined :: undefined | binary(),
-	ttl      = undefined :: undefined | non_neg_integer(),
-
-	%% SRV
-	priority = undefined :: undefined | non_neg_integer(),
-	weight   = undefined :: undefined | non_neg_integer(),
-	port     = undefined :: undefined | non_neg_integer(),
-	target   = undefined :: undefined | binary(),
-
-	%% TXT
-	txtdata  = undefined :: undefined | [{binary(), binary()}]
-}).
+-include("redis_sd_dns.hrl").
 
 -define(REDIS_SD_HRL, 1).
 
