@@ -3,7 +3,7 @@
 %% vim: ts=4 sw=4 ft=erlang noet
 %%%-------------------------------------------------------------------
 %%% @author Andrew Bennett <andrew@pagodabox.com>
-%%% @copyright 2013, Pagoda Box, Inc.
+%%% @copyright 2014, Pagoda Box, Inc.
 %%% @doc urldecode/1,2 and urlencode/1,2 are from cowboy_http, require/1 is from ranch
 %%% https://github.com/extend/cowboy/blob/0.8.6/src/cowboy_http.erl
 %%% https://github.com/extend/ranch/blob/0.8.5/src/ranch.erl
