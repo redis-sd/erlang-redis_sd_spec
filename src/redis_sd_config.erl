@@ -24,7 +24,7 @@
 %%%===================================================================
 
 env(Key, Default) ->
-	get_app_config(redis_sd, Key, Default).
+	get_app_config(redis_sd_spec, Key, Default).
 
 app_env(App, Key, Default) when is_atom(App) ->
 	get_app_config(App, Key, env(Key, Default));
